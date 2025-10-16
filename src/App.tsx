@@ -145,9 +145,11 @@ export default function App() {
       <div className="relative z-10 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto">
         <header className="mb-12 text-center">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-primary-light pb-2">
-            Assistente Visual de Decisão AHP
+            Decisor AHP de Linguagens de Programação
           </h1>
-          <p className="text-md text-slate-400 mt-2">Tome decisões complexas de forma visual e intuitiva.</p>
+          <p className="text-md text-slate-400 mt-2 max-w-2xl mx-auto">
+            Defina seus critérios, compare as principais linguagens e descubra qual se encaixa perfeitamente nos seus objetivos.
+          </p>
         </header>
 
         <div className="flex justify-center mb-10">
