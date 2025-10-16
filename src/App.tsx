@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 // Ícones importados, incluindo o de alerta
 import { PlusCircle, Trash2, Trophy, Info, ListChecks, Layers3, Edit3, User, SlidersHorizontal, Sparkles, AlertTriangle } from 'lucide-react';
 
@@ -11,9 +11,9 @@ const DEFAULT_ALTERNATIVES = ["Python", "JavaScript/TS", "Java", "C#", "Go"];
 
 // As chaves são os NOMES dos critérios para um mapeamento robusto
 const DEFAULT_ALT_PAIRS_BY_CRITERION: Record<string, Record<string, number>> = {
-  'Curva de Aprendizagem': { '0_1': -3, '0_2': -6, '0_3': -6, '0_4': -2, '1_2': -2, '1_3': -2, '1_4': 1, '2_3': 0, '2_4': 6, '3_4': 6 },
-  'Mercado de Trabalho': { '0_1': 2, '0_2': 2, '0_3': -2, '0_4': -6, '1_2': -2, '1_3': -4, '1_4': -7, '2_3': -3, '2_4': -7, '3_4': -5 },
-  'Potencial Salarial': { '0_1': -1, '0_2': -1, '0_3': -1, '0_4': 4, '1_2': 0, '1_3': 0, '1_4': 4, '2_3': 0, '2_4': 4, '3_4': 4 },
+  'Curva de Aprendizagem': { 'Python_JavaScript/TS': -3, 'Python_Java': -6, 'Python_C#': -6, 'Python_Go': -2, 'JavaScript/TS_Java': -2, 'JavaScript/TS_C#': -2, 'JavaScript/TS_Go': 1, 'Java_C#': 0, 'Java_Go': 6, 'C#_Go': 6 },
+  'Mercado de Trabalho': { 'Python_JavaScript/TS': 2, 'Python_Java': 2, 'Python_C#': -2, 'Python_Go': -6, 'JavaScript/TS_Java': -2, 'JavaScript/TS_C#': -4, 'JavaScript/TS_Go': -7, 'Java_C#': -3, 'Java_Go': -7, 'C#_Go': -5 },
+  'Potencial Salarial': { 'Python_JavaScript/TS': -1, 'Python_Java': -1, 'Python_C#': -1, 'Python_Go': 4, 'JavaScript/TS_Java': 0, 'JavaScript/TS_C#': 0, 'JavaScript/TS_Go': 4, 'Java_C#': 0, 'Java_Go': 4, 'C#_Go': 4 },
 };
 
 const RI_MAP: Record<number, number> = { 1: 0, 2: 0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49 };
@@ -49,12 +49,15 @@ function calcConsistency(matrix: Matrix, priorities: number[]): { CI: number; CR
   const CR = RI === 0 ? 0 : CI / RI;
   return { CI, CR };
 }
+
+// ALTERADO: A função agora usa os nomes dos itens para buscar os pares
 function buildMatrixFromPairs(names: string[], pairs: Record<string, number>): Matrix {
   const n = names.length;
   const matrix: Matrix = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const key = `${i}_${j}`;
+      // A chave é criada a partir dos nomes, não dos índices
+      const key = `${names[i]}_${names[j]}`;
       const sliderValue = pairs[key] ?? 0;
       const roundedSlider = Math.round(sliderValue);
       let saatyValue = 1;
@@ -114,10 +117,37 @@ export default function App() {
   const [view, setView] = useState<ViewMode>('creator');
   const [criteria, setCriteria] = useState<string[]>(DEFAULT_CRITERIA);
   const [alternatives, setAlternatives] = useState<string[]>(DEFAULT_ALTERNATIVES);
-  const [criteriaPairs, setCriteriaPairs] = useState<Record<string, number>>({});
+  // Os dados de comparação de critério agora têm chaves baseadas em nome
+  const [criteriaPairs, setCriteriaPairs] = useState<Record<string, number>>({
+      'Curva de Aprendizagem_Mercado de Trabalho': 4,
+      'Curva de Aprendizagem_Potencial Salarial': 2,
+      'Mercado de Trabalho_Potencial Salarial': -2
+  });
   const [altPairsByCriterion, setAltPairsByCriterion] = useState<Record<string, Record<string, number>>>(DEFAULT_ALT_PAIRS_BY_CRITERION);
   const [resultsVisible, setResultsVisible] = useState(false);
   const [consistencyError, setConsistencyError] = useState<string | null>(null);
+  
+  // ADICIONADO: Hook para lidar com a renomeação de critérios
+  const prevCriteriaRef = useRef<string[]>(criteria);
+  useEffect(() => {
+    const prevCriteria = prevCriteriaRef.current;
+    if (prevCriteria.length === criteria.length) { // Apenas checa renomeação, não adição/remoção
+      const newName = criteria.find(c => !prevCriteria.includes(c));
+      const oldName = prevCriteria.find(p => !criteria.includes(p));
+
+      if (newName && oldName) {
+        setAltPairsByCriterion(prev => {
+          if (!prev[oldName]) return prev;
+          const updatedPairs = { ...prev };
+          updatedPairs[newName] = updatedPairs[oldName]; // Copia os dados
+          delete updatedPairs[oldName]; // Remove a chave antiga
+          return updatedPairs;
+        });
+      }
+    }
+    prevCriteriaRef.current = criteria; // Atualiza a referência para a próxima renderização
+  }, [criteria]);
+  
 
   const criteriaMatrix = useMemo(() => buildMatrixFromPairs(criteria, criteriaPairs), [criteria, criteriaPairs]);
   const criteriaPriorities = useMemo(() => getPriorityVector(criteriaMatrix), [criteriaMatrix]);
@@ -125,8 +155,8 @@ export default function App() {
   
   const altPrioritiesPerCriterion = useMemo(() => {
     return criteria.map((crit) => {
-      const map = altPairsByCriterion[crit] ?? {};
-      const matrix = buildMatrixFromPairs(alternatives, map);
+      const pairs = altPairsByCriterion[crit] ?? {};
+      const matrix = buildMatrixFromPairs(alternatives, pairs);
       const priorities = getPriorityVector(matrix);
       const consistency = calcConsistency(matrix, priorities);
       return { matrix, priorities, consistency, name: crit };
@@ -137,13 +167,20 @@ export default function App() {
     const nAlt = alternatives.length;
     if (nAlt === 0 || criteria.length === 0) return [];
     const scores = Array(nAlt).fill(0);
-    criteriaPriorities.forEach((weight, i) => {
-      const altPriorities = altPrioritiesPerCriterion[i]?.priorities ?? Array(nAlt).fill(1 / nAlt);
-      for (let a = 0; a < nAlt; a++) { scores[a] += weight * altPriorities[a]; }
+
+    criteria.forEach((crit, i) => {
+      const weight = criteriaPriorities[i];
+      const altSet = altPrioritiesPerCriterion.find(c => c.name === crit);
+      const altPriorities = altSet ? altSet.priorities : Array(nAlt).fill(1 / nAlt);
+      for (let a = 0; a < nAlt; a++) {
+        scores[a] += weight * altPriorities[a];
+      }
     });
-    return scores.map((s, idx) => ({ name: alternatives[idx], score: s }));
-  }, [criteriaPriorities, altPrioritiesPerCriterion, alternatives, criteria.length]);
-  
+
+    const total = scores.reduce((acc, v) => acc + v, 0) || 1;
+    return scores.map((s, idx) => ({ name: alternatives[idx], score: s / total }));
+  }, [criteriaPriorities, altPrioritiesPerCriterion, alternatives, criteria]);
+
   const sortedFinal = useMemo(() => [...finalScores].sort((a, b) => b.score - a.score), [finalScores]);
   
   const addHandler = (setter: React.Dispatch<React.SetStateAction<string[]>>, baseName: string) => {
@@ -154,18 +191,20 @@ export default function App() {
     setter(arr => arr.filter((_, idx) => idx !== index));
   };
   
-  const setCriteriaPair = (i: number, j: number, value: number) => {
-    setCriteriaPairs(p => ({ ...p, [`${i}_${j}`]: value }));
+  // ALTERADO: A função agora recebe os nomes dos itens
+  const setCriteriaPair = (item1: string, item2: string, value: number) => {
+    const key = `${item1}_${item2}`;
+    setCriteriaPairs(p => ({ ...p, [key]: value }));
   };
   
-  const setAltPair = (critIdx: number, i: number, j: number, value: number) => {
-    const critName = criteria[critIdx];
-    if (!critName) return;
+  // ALTERADO: A função agora recebe os nomes dos itens
+  const setAltPair = (critName: string, alt1: string, alt2: string, value: number) => {
+    const key = `${alt1}_${alt2}`;
     setAltPairsByCriterion(prev => ({
       ...prev,
       [critName]: {
         ...(prev[critName] ?? {}),
-        [`${i}_${j}`]: value
+        [key]: value
       },
     }));
   };
@@ -272,7 +311,16 @@ export default function App() {
                 <div className="p-6">
                   <div className="flex items-center gap-3"><SlidersHorizontal className="text-primary" size={24} /><h2 className="font-bold text-xl text-white">Ajuste as Suas Preferências</h2></div>
                   <div className="mt-4 space-y-2 divide-y divide-slate-700/50">
-                    {criteria.length > 1 && criteria.map((c1, i) => criteria.slice(i + 1).map((c2, j_offset) => { const j = i + 1 + j_offset; return <ComparisonSlider key={`${i}_${j}`} item1={c1} item2={c2} value={criteriaPairs[`${i}_${j}`] ?? 0} onChange={v => setCriteriaPair(i, j, v)} />; }))}
+                    {/* ALTERADO: Renderização e handlers agora usam os nomes dos itens */}
+                    {criteria.length > 1 && criteria.map((c1, i) => criteria.slice(i + 1).map((c2) => (
+                      <ComparisonSlider
+                        key={`${c1}_${c2}`}
+                        item1={c1}
+                        item2={c2}
+                        value={criteriaPairs[`${c1}_${c2}`] ?? 0}
+                        onChange={v => setCriteriaPair(c1, c2, v)}
+                      />
+                    )))}
                   </div>
                 </div>
                 <div className="p-6 pt-2 text-sm text-slate-400 flex items-center gap-2">
@@ -291,11 +339,20 @@ export default function App() {
                 <div className="p-6">
                   <div className="flex items-center gap-3"><SlidersHorizontal className="text-primary" size={24} /><h2 className="font-bold text-xl text-white">3. Comparar Alternativas por Critério</h2></div>
                   <div className="mt-4 space-y-8">
-                    {criteria.map((crit, cIdx) => (
+                    {criteria.map((crit) => (
                       <div key={crit}>
                         <h3 className="font-semibold text-lg text-primary-light border-b border-slate-700 pb-2 mb-4">Em relação a "{crit}":</h3>
                         <div className="space-y-2 divide-y divide-slate-700/50">
-                          {alternatives.length > 1 && alternatives.slice(0, -1).map((a1, i) => alternatives.slice(i + 1).map((a2, j_offset) => { const j = i + 1 + j_offset; return <ComparisonSlider key={`${i}_${j}`} item1={a1} item2={a2} value={altPairsByCriterion[crit]?.[`${i}_${j}`] ?? 0} onChange={v => setAltPair(cIdx, i, j, v)} />; }))}
+                          {/* ALTERADO: Renderização e handlers agora usam os nomes dos itens */}
+                          {alternatives.length > 1 && alternatives.map((a1, i) => alternatives.slice(i + 1).map((a2) => (
+                            <ComparisonSlider
+                              key={`${crit}_${a1}_${a2}`}
+                              item1={a1}
+                              item2={a2}
+                              value={altPairsByCriterion[crit]?.[`${a1}_${a2}`] ?? 0}
+                              onChange={v => setAltPair(crit, a1, a2, v)}
+                            />
+                          )))}
                         </div>
                       </div>
                     ))}
